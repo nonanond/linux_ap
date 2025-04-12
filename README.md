@@ -12,6 +12,10 @@ sudo ip link add name br0 type bridge
 sudo ip link set br0 up
 sudo ip addr add 192.168.1.1/24 dev br0
 
+## Attach wlan0 to the bridge
+sudo ip link set wlan0 master br0
+sudo ip link set wlan0 up
+
 ## Configure hostapd
 sudo nano /etc/hostapd/hostapd.conf
 
@@ -53,15 +57,25 @@ bind-interfaces
 ## Start dnsmasq
 sudo systemctl restart dnsmasq
 
-## Enable IP Forwarding
+## Enable IP Forwarding temporarily
 sudo sysctl net.ipv4.ip_forward=1
 
 ## Autostart on boot
 sudo systemctl enable --now hostapd dnsmasq
 
-## Enable NAT
+# Enable NAT
 sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-sudo iptables -A FORWARD -i wlan0 -o eth0 -j ACCEPT
+
+## Enable NAT
+# Allow all bridge-local traffic
+sudo iptables -A FORWARD -i br0 -o br0 -j ACCEPT
+
+# Allow traffic between bridge and internet (if using NAT)
+sudo iptables -A FORWARD -i br0 -o eth0 -j ACCEPT
+sudo iptables -A FORWARD -i eth0 -o br0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# Not necessary ? Enable NAT (if sharing internet)
+sudo iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 
 ## Make NAT persistent
 sudo apt install iptables-persistent
@@ -76,3 +90,12 @@ sudo netstat -tulpn | grep 53
 sudo systemctl stop systemd-resolved
 sudo systemctl disable systemd-resolved
 sudo systemctl restart dnsmasq
+
+## clean up rules
+sudo iptables -F
+sudo iptables -t nat -F
+sudo iptables -X
+
+## Check firewall
+sudo iptables -t nat -L -v        # Check NAT rules
+sudo iptables -L FORWARD -v       # Check forwarding
